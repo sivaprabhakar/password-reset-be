@@ -1,28 +1,29 @@
+import User from '../models/User.js';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import nodemailer from 'nodemailer';
+import crypto from 'crypto';
 
-const express = require('express');
-const router = express.Router();
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
-const crypto = require('crypto');
-const User = require('../models/User');
-const verifyToken = require('../verifyToken');
+
+
+
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USERNAME,
-    pass: process.env.EMAIL_PASSWORD,
+    user: 'pmkaran52@gmail.com',
+    pass: 'rcjd puqx rvag cysb',
   },
 });
 
 // Signup
-router.post('/signup', async (req, res) => {
+const signup = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { name,email, password } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = new User({
+      name,
       email,
       password: hashedPassword,
     });
@@ -34,10 +35,10 @@ router.post('/signup', async (req, res) => {
     console.error('Error signing up:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
-});
+};
 
 // Login
-router.post('/login', async (req, res) => {
+const login = async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
@@ -58,10 +59,10 @@ router.post('/login', async (req, res) => {
     console.error('Error logging in:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
-});
+};
 
 // Forgot Password
-router.post('/forgot-password', async (req, res) => {
+const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
     const user = await User.findOne({ email });
@@ -70,14 +71,15 @@ router.post('/forgot-password', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const token = crypto.randomBytes(20).toString('hex');
-    const tokenExpiration = Date.now() + 3600000; // 1 hour
-
-    await User.findByIdAndUpdate(user._id, { resetPasswordToken: token, resetPasswordExpires: tokenExpiration });
-
-    const resetLink = `http://localhost:8000/reset-password/${token}`;
+    const resetToken = crypto.randomBytes(20).toString('hex');
+    const tokenExpiration = Date.now() + 3600000;
+    // Store the random string in the user document
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = tokenExpiration;
+    await user.save();
+    const resetLink = `http://localhost:5173/reset-password/${resetToken}`;
     const mailOptions = {
-      from: process.env.EMAIL_USERNAME,
+      from: 'pmkaran52@gmail.com',
       to: user.email,
       subject: 'Password Reset',
       html: `<p>You are receiving this because you (or someone else) have requested the reset of the password for your account.</p>
@@ -93,19 +95,14 @@ router.post('/forgot-password', async (req, res) => {
     console.error('Error sending forgot password request:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
-});
+};
 
-// Reset Password
-router.post('/reset-password', async (req, res) => {
+const checkResetToken = async (req, res) => {
+  const { token } = req.params;
+
   try {
-    const { password } = req.body;
-    const { authorization } = req.headers;
-
-    const decodedToken = jwt.verify(authorization, process.env.SECRET_KEY);
-
     const user = await User.findOne({
-      _id: decodedToken.id,
-      resetPasswordToken: authorization,
+      resetPasswordToken: token,
       resetPasswordExpires: { $gt: Date.now() },
     });
 
@@ -113,7 +110,32 @@ router.post('/reset-password', async (req, res) => {
       return res.status(403).json({ message: 'Invalid or expired token' });
     }
 
+    res.status(200).json({ message: 'Token is valid' });
+  } catch (error) {
+    console.error('Error checking reset token:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
+// Reset Password
+const resetPassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+    const  token  = req.headers.authorization.split(' ')[1];
+    console.log('Received reset request with token:', token)
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(403).json({ message: 'Invalid or expired token' });
+    }
+
+    // Store the new password
     user.password = await bcrypt.hash(password, 10);
+
+    // Clear the random string in the DB
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
 
@@ -124,6 +146,6 @@ router.post('/reset-password', async (req, res) => {
     console.error('Error resetting password:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
-});
+};
 
-module.exports = router;
+export { signup, login, forgotPassword, resetPassword,checkResetToken };
