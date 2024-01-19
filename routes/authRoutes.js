@@ -77,7 +77,7 @@ const forgotPassword = async (req, res) => {
     user.resetPasswordToken = resetToken;
     user.resetPasswordExpires = tokenExpiration;
     await user.save();
-    const resetLink = `http://localhost:5173/reset-password/${resetToken}`;
+    const resetLink = `https://passwordreset-front.netlify.app/reset-password/${resetToken}`;
     const mailOptions = {
       from: 'pmkaran52@gmail.com',
       to: user.email,
